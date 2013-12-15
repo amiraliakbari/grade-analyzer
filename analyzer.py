@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import re
 import glob
 
@@ -73,7 +74,14 @@ class ExamGrade(object):
     def add_grade(self, grade):
         if self.is_absent:
             raise ValueError
-        self.question_grades.append(grade)
+        try:
+            self.question_grades.append(float(grade))
+        except ValueError:
+            pass
+
+    @property
+    def total_grade(self):
+        return sum(self.question_grades)
 
     @property
     def student(self):
@@ -151,6 +159,7 @@ class FileReader(object):
             for i, c in enumerate(cols):
                 if re.match(r'q\d+', c):
                     qid = int(c[1:])
+                    #print qid, grades, i
                     e.add_grade(grades[i])
             #print(unicode(e))
         elif tp == 'dormitory':
@@ -159,6 +168,12 @@ class FileReader(object):
             r.dormitory = self.opts['dormitory']
             for std in stds.split(','):
                 r.add_student(std)
+        elif tp == 'dormitory-expanded':
+            stdid, block, room = l.split(',')
+            room = '{block}/{room}'.format(block=block, room=room)
+            r = Room.get_object(room, create=True)
+            r.dormitory = self.opts['dormitory']
+            r.add_student(stdid)
         else:
             raise ValueError
 
@@ -167,24 +182,43 @@ class FileReader(object):
             self.read_line(l)
 
 
+# TODO: fix multiple dormitory bug
+
 if __name__ == '__main__':
-    FileReader('data/tg1.txt')
-    FileReader('data/tg2.txt')
-    FileReader('data/tg3.txt')
+    for filename in glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', '*.txt')):
+        FileReader(filename)
 
-    if False:
-        for s in Student.all_objects():
-            print(unicode(s))
-
-    if True:
-        for r in Room.all_objects():
-            #print type(r), r
-            title = ' ' + unicode(r) + ' ' + r.dormitory + ' '
-            print('')
-            print('*'*len(title))
-            print(title)
-            print('*'*len(title))
-            for s in r.students:
-                print('### {0} ###'.format(s.pk))
-                for eg in s.grades:
-                    print(u'{0}: {1}'.format(eg.exam, str(eg.question_grades)))
+    while True:
+        print("\nPlease select type of queries:\n\t1) Student Grade (by id)\n\t2) Dormitory Report\n\t3) Exit")
+        ch = raw_input("Query? [1-3] ").strip()
+        if ch == '1':
+            while True:
+                try:
+                    stdid = int(raw_input("Please enter student id... (or 0 to go back) "))
+                except ValueError:
+                    print("Invalid student id!")
+                    continue
+                if stdid == 0:
+                    break
+                print(unicode(Student.get_object(pk=str(stdid))))
+        elif ch == '2':
+            filename = raw_input("Enter output report filename... ")
+            with open(filename, 'w') as f:
+                for r in sorted(Room.all_objects(), key=lambda rr: (rr.dormitory, rr.pk)):
+                    #print type(r), r
+                    title = ' ' + unicode(r) + ' ' + r.dormitory + ' '
+                    f.write('\n')
+                    f.write('*'*len(title) + '\n')
+                    f.write(title + '\n')
+                    f.write('*'*len(title) + '\n')
+                    for s in r.students:
+                        f.write('### {0} ###\n'.format(s.pk))
+                        for eg in s.grades:
+                            f.write(u'{0}: {1} {2}\n'.format(eg.exam, eg.total_grade, str(eg.question_grades)))
+            print("Report successfully saved in file!")
+        elif ch == '3':
+            print("Goodbye!")
+            break
+        else:
+            print("Invalid choice!")
+            continue
